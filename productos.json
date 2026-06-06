@@ -1,0 +1,20 @@
+[
+    {
+        "nombre": "CocaCola",
+        "precio": 3200,
+        "img_path": "C:\/Users\/juand\/Downloads\/cocacola.jpg",
+        "stock": 6
+    },
+    {
+        "nombre": "Pan",
+        "precio": 2000,
+        "img_path": "C:\/Users\/juand\/Downloads\/pan.jpg",
+        "stock": 15
+    },
+    {
+        "nombre": "Cafe",
+        "precio": 1200,
+        "img_path": null,
+        "stock": 4
+    }
+]

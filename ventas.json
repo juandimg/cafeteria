@@ -1,0 +1,23 @@
+[
+    {
+        "id": 1,
+        "fecha": "2026-05-06",
+        "hora": "04:38:31",
+        "medio_pago": "Efectivo",
+        "items": [
+            {
+                "nombre": "CocaCola",
+                "cantidad": 3,
+                "precio": 3200,
+                "subtotal": 9600
+            },
+            {
+                "nombre": "Pan",
+                "cantidad": 1,
+                "precio": 2000,
+                "subtotal": 2000
+            }
+        ],
+        "total": 11600
+    }
+]
