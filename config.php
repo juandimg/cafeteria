@@ -11,10 +11,11 @@ if ($_is_local) {
     define('DB_USER', 'root');
     define('DB_PASS', 'Esognare2020.');
 } else {
-    define('DB_HOST', 'sql102.infinityfree.com');
-    define('DB_NAME', 'if0_42110635_cafepro');
-    define('DB_USER', 'if0_42110635');
-    define('DB_PASS', 'Juandiluz10');
+    // En producción usa variables de entorno de Render
+    define('DB_HOST', getenv('DB_HOST') ?: 'sql102.infinityfree.com');
+    define('DB_NAME', getenv('DB_NAME') ?: 'if0_42110635_cafepro');
+    define('DB_USER', getenv('DB_USER') ?: 'if0_42110635');
+    define('DB_PASS', getenv('DB_PASS') ?: 'Juandiluz10');
 }
 
 // ─── Configuración SMTP ────────────────────────────────────────────────────
