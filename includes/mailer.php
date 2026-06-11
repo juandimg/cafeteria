@@ -24,7 +24,10 @@ function enviar_email(string $to, string $subject, string $body): bool {
 
         $mail->send();
         return true;
-    } catch (Exception) {
+    } catch (Exception $e) {
+        if (($_SERVER['HTTP_HOST'] ?? '') === 'localhost') {
+            error_log('[mailer] ' . $e->getMessage());
+        }
         return false;
     }
 }

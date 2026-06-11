@@ -2,15 +2,22 @@
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/data.php';
 
-$ventas = leer_ventas();
-$hoy    = date('Y-m-d');
-$mes    = date('Y-m');
+$ventas  = leer_ventas();
+$compras = leer_compras();
+$hoy     = date('Y-m-d');
+$mes     = date('Y-m');
 
-$ventas_hoy = array_filter($ventas, fn($v) => ($v['fecha'] ?? '') === $hoy);
-$ventas_mes = array_filter($ventas, fn($v) => str_starts_with($v['fecha'] ?? '', $mes));
+$ventas_hoy  = array_filter($ventas,  fn($v) => ($v['fecha'] ?? '') === $hoy);
+$ventas_mes  = array_filter($ventas,  fn($v) => str_starts_with($v['fecha'] ?? '', $mes));
+$compras_hoy = array_filter($compras, fn($c) => ($c['fecha'] ?? '') === $hoy);
+$compras_mes = array_filter($compras, fn($c) => str_starts_with($c['fecha'] ?? '', $mes));
 
-$total_hoy = array_sum(array_column(array_values($ventas_hoy), 'total'));
-$total_mes = array_sum(array_column(array_values($ventas_mes), 'total'));
+$total_hoy      = array_sum(array_map(fn($v) => (float)$v['total'], array_values($ventas_hoy)));
+$total_mes      = array_sum(array_map(fn($v) => (float)$v['total'], array_values($ventas_mes)));
+$egresos_hoy    = array_sum(array_map(fn($c) => (float)$c['total'], array_values($compras_hoy)));
+$egresos_mes    = array_sum(array_map(fn($c) => (float)$c['total'], array_values($compras_mes)));
+$ganancia_hoy   = $total_hoy - $egresos_hoy;
+$ganancia_mes   = $total_mes - $egresos_mes;
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -47,6 +54,10 @@ $total_mes = array_sum(array_column(array_values($ventas_mes), 'total'));
 .sb-lbl { font-size:10px; font-weight:700; color:var(--txt-g); letter-spacing:.4px; }
 .sb-val { font-size:16px; font-weight:700; }
 .sb-sep { width:1px; height:32px; background:#EEEEEE; }
+
+.period-btn { padding:7px 16px; border-radius:20px; border:2px solid #E0E0E0; background:#fff; font-size:12px; font-weight:700; color:var(--txt-g); cursor:pointer; transition:.15s; }
+.period-btn:hover { border-color:var(--amber); color:var(--amber); }
+.period-btn-active { border-color:var(--amber) !important; background:var(--amber) !important; color:#fff !important; }
 </style>
 </head>
 <body>
@@ -59,23 +70,52 @@ $total_mes = array_sum(array_column(array_values($ventas_mes), 'total'));
     </div>
     <div class="page-body">
 
-        <!-- Stats cards -->
+        <!-- Selector de período -->
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+            <span style="font-size:12px;font-weight:700;color:var(--txt-g);letter-spacing:.4px">PERÍODO:</span>
+            <button id="pq-hoy"    class="period-btn" onclick="quickRange('hoy')">Hoy</button>
+            <button id="pq-semana" class="period-btn" onclick="quickRange('semana')">Esta semana</button>
+            <button id="pq-mes"    class="period-btn period-btn-active" onclick="quickRange('mes')">Este mes</button>
+            <button id="pq-todo"   class="period-btn" onclick="quickRange('todo')">Todo</button>
+            <div style="display:flex;align-items:center;gap:6px;margin-left:8px">
+                <input type="date" id="d-desde" class="filter-control" style="height:34px" oninput="clearPeriodActive();renderDias()">
+                <span style="color:var(--txt-g);font-size:12px">—</span>
+                <input type="date" id="d-hasta" class="filter-control" style="height:34px" oninput="clearPeriodActive();renderDias()">
+            </div>
+        </div>
+
+        <!-- Stats cards dinámicas -->
         <div class="stats-row cols-4" style="margin-bottom:20px">
             <div class="stat-card bg-blue">
                 <span class="stat-ico">🛒</span>
-                <div><div class="stat-val"><?= count($ventas_hoy) ?></div><div class="stat-lbl">Ventas hoy</div></div>
+                <div>
+                    <div class="stat-val" id="sc-ventas">—</div>
+                    <div class="stat-lbl" id="sc-ventas-lbl">Ventas</div>
+                </div>
             </div>
             <div class="stat-card bg-green">
                 <span class="stat-ico">💰</span>
-                <div><div class="stat-val"><?= fmt_money($total_hoy) ?></div><div class="stat-lbl">Ingresos hoy</div></div>
+                <div>
+                    <div class="stat-val" id="sc-ingresos">—</div>
+                    <div class="stat-lbl">Ingresos</div>
+                    <div style="font-size:11px;color:rgba(255,255,255,.8);margin-top:2px" id="sc-ingresos-sub"></div>
+                </div>
             </div>
-            <div class="stat-card bg-purple">
-                <span class="stat-ico">📅</span>
-                <div><div class="stat-val"><?= count($ventas_mes) ?></div><div class="stat-lbl">Ventas este mes</div></div>
+            <div class="stat-card" style="background:var(--red)">
+                <span class="stat-ico">📦</span>
+                <div>
+                    <div class="stat-val" id="sc-egresos">—</div>
+                    <div class="stat-lbl">Egresos (compras)</div>
+                    <div style="font-size:11px;color:rgba(255,255,255,.8);margin-top:2px" id="sc-egresos-sub"></div>
+                </div>
             </div>
-            <div class="stat-card bg-amber">
-                <span class="stat-ico">💵</span>
-                <div><div class="stat-val"><?= fmt_money($total_mes) ?></div><div class="stat-lbl">Ingresos del mes</div></div>
+            <div class="stat-card bg-amber" id="sc-ganancia-card">
+                <span class="stat-ico" id="sc-ganancia-ico">💹</span>
+                <div>
+                    <div class="stat-val" id="sc-ganancia">—</div>
+                    <div class="stat-lbl">Ganancia neta</div>
+                    <div style="font-size:11px;color:rgba(255,255,255,.8);margin-top:2px" id="sc-ganancia-sub"></div>
+                </div>
             </div>
         </div>
 
@@ -87,38 +127,6 @@ $total_mes = array_sum(array_column(array_values($ventas_mes), 'total'));
 
         <!-- ══ TAB: Por día ══ -->
         <div id="tab-dias">
-            <div class="filter-bar" style="margin-bottom:16px">
-                <div class="filter-group">
-                    <label class="filter-label">DESDE</label>
-                    <input type="date" id="d-desde" class="filter-control" oninput="renderDias()">
-                </div>
-                <div class="filter-group">
-                    <label class="filter-label">HASTA</label>
-                    <input type="date" id="d-hasta" class="filter-control" oninput="renderDias()">
-                </div>
-                <div class="filter-group">
-                    <label class="filter-label">ACCESO RÁPIDO</label>
-                    <div class="quick-btns">
-                        <button class="quick-btn" onclick="quickRange('hoy')">Hoy</button>
-                        <button class="quick-btn" onclick="quickRange('semana')">Esta semana</button>
-                        <button class="quick-btn" onclick="quickRange('mes')">Este mes</button>
-                        <button class="quick-btn" onclick="quickRange('todo')">Todo</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Summary band días -->
-            <div class="summary-band" id="dias-summary" style="display:none">
-                <div class="sb-item"><span class="sb-lbl">DÍAS CON VENTAS</span><span class="sb-val" id="sd-dias">0</span></div>
-                <div class="sb-sep"></div>
-                <div class="sb-item"><span class="sb-lbl">TOTAL VENTAS</span><span class="sb-val" id="sd-ventas">0</span></div>
-                <div class="sb-sep"></div>
-                <div class="sb-item"><span class="sb-lbl">💵 EFECTIVO</span><span class="sb-val text-green" id="sd-ef">$ 0</span></div>
-                <div class="sb-sep"></div>
-                <div class="sb-item"><span class="sb-lbl">📱 TRANSFERENCIA</span><span class="sb-val text-blue" id="sd-tr">$ 0</span></div>
-                <div class="sb-sep"></div>
-                <div class="sb-item"><span class="sb-lbl">TOTAL INGRESOS</span><span class="sb-val text-amber" id="sd-total">$ 0</span></div>
-            </div>
 
             <div id="dias-empty" class="empty-state" style="display:none">
                 <div class="es-ico">📅</div>No hay ventas en el período seleccionado.
@@ -128,11 +136,13 @@ $total_mes = array_sum(array_column(array_values($ventas_mes), 'total'));
                 <table class="report-table" style="table-layout:fixed">
                     <thead>
                         <tr>
-                            <th style="width:38%">Fecha</th>
-                            <th style="width:12%;text-align:center">Ventas</th>
-                            <th style="width:18%;text-align:right">💵 Efectivo</th>
-                            <th style="width:18%;text-align:right">📱 Transfer.</th>
-                            <th style="width:14%;text-align:right">Total</th>
+                            <th style="width:26%">Fecha</th>
+                            <th style="width:8%;text-align:center">Ventas</th>
+                            <th style="width:13%;text-align:right">💵 Efectivo</th>
+                            <th style="width:13%;text-align:right">📱 Transfer.</th>
+                            <th style="width:13%;text-align:right">Ingresos</th>
+                            <th style="width:13%;text-align:right">🛒 Egresos</th>
+                            <th style="width:14%;text-align:right">💹 Neto</th>
                         </tr>
                     </thead>
                     <tbody id="dias-tbody"></tbody>
@@ -157,6 +167,7 @@ $total_mes = array_sum(array_column(array_values($ventas_mes), 'total'));
                         <option value="">Todos</option>
                         <option value="Efectivo">💵 Efectivo</option>
                         <option value="Transferencia">📱 Transferencia</option>
+                        <option value="Crédito">📋 Crédito</option>
                     </select>
                 </div>
                 <div class="filter-group">
@@ -208,8 +219,9 @@ $total_mes = array_sum(array_column(array_values($ventas_mes), 'total'));
 </div>
 
 <script>
-const VENTAS = <?= json_encode($ventas) ?>;
-const HOY    = '<?= $hoy ?>';
+const VENTAS  = <?= json_encode($ventas) ?>;
+const COMPRAS = <?= json_encode($compras) ?>;
+const HOY     = '<?= $hoy ?>';
 
 const diasN  = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
 const mesesN = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -219,6 +231,15 @@ document.getElementById('fecha-hoy').textContent =
 
 function fmtMoney(v) { return '$ ' + Math.round(v).toLocaleString('es-CO'); }
 function esc(s) { const e=document.createElement('div'); e.textContent=String(s||''); return e.innerHTML; }
+function medioBadge(medio) {
+    const esAbono = (medio||'').includes('(abono)');
+    const base    = (medio||'').replace(' (abono)', '');
+    const abonoTag = esAbono ? ' <span style="font-size:10px;color:var(--amber);font-weight:700">⚡ abono</span>' : '';
+    if (base === 'Efectivo')      return '<span class="badge badge-green">💵 Efectivo</span>' + abonoTag;
+    if (base === 'Transferencia') return '<span class="badge badge-blue">📱 Transferencia</span>' + abonoTag;
+    if (base === 'Crédito')       return '<span class="badge" style="background:#EDE7F6;color:var(--purple)">📋 Crédito</span>' + abonoTag;
+    return '<span class="badge" style="background:#F5F5F5;color:var(--slate)">' + esc(medio) + '</span>';
+}
 
 function fechaLarga(iso) {
     const [y, m, dd] = iso.split('-').map(Number);
@@ -243,6 +264,16 @@ function isoWeekStart() {
 }
 function isoMonthStart() { return HOY.slice(0,7) + '-01'; }
 
+const PERIOD_LABELS = { hoy: 'Hoy', semana: 'Esta semana', mes: 'Este mes', todo: 'Todo el tiempo' };
+let activePeriod = 'mes';
+
+function clearPeriodActive() {
+    activePeriod = null;
+    ['hoy','semana','mes','todo'].forEach(k => {
+        document.getElementById('pq-' + k)?.classList.remove('period-btn-active');
+    });
+}
+
 function quickRange(r) {
     const desde = document.getElementById('d-desde');
     const hasta = document.getElementById('d-hasta');
@@ -250,6 +281,9 @@ function quickRange(r) {
     if (r === 'semana') { desde.value = isoWeekStart(); hasta.value = HOY; }
     if (r === 'mes')    { desde.value = isoMonthStart(); hasta.value = HOY; }
     if (r === 'todo')   { desde.value = ''; hasta.value = ''; }
+    clearPeriodActive();
+    activePeriod = r;
+    document.getElementById('pq-' + r)?.classList.add('period-btn-active');
     renderDias();
 }
 function quickMov(r) {
@@ -280,46 +314,78 @@ function renderDias() {
     const porFecha = {};
     lista.forEach(v => {
         const f = v.fecha;
-        if (!porFecha[f]) porFecha[f] = { ventas: [], ef: 0, tr: 0, total: 0 };
+        if (!porFecha[f]) porFecha[f] = { ventas: [], compras: [], ef: 0, tr: 0, total: 0, egresos: 0 };
         porFecha[f].ventas.push(v);
-        const t = v.total || 0;
+        const t  = parseFloat(v.total) || 0;
         porFecha[f].total += t;
-        if ((v.medio_pago || 'Efectivo') === 'Efectivo') porFecha[f].ef += t;
-        else porFecha[f].tr += t;
+        const mp = v.medio_pago || 'Efectivo';
+        if (mp === 'Efectivo' || mp === 'Efectivo (abono)')                porFecha[f].ef += t;
+        else if (mp === 'Transferencia' || mp === 'Transferencia (abono)') porFecha[f].tr += t;
+    });
+
+    // Add compras (egresos) per date
+    COMPRAS.forEach(c => {
+        const f = c.fecha;
+        if (!porFecha[f]) return; // only show days with sales (or change to also show compra-only days)
+        porFecha[f].compras.push(c);
+        porFecha[f].egresos += parseFloat(c.total) || 0;
     });
 
     const fechas = Object.keys(porFecha).sort((a,b) => b.localeCompare(a));
 
     const empty = document.getElementById('dias-empty');
     const wrap  = document.getElementById('dias-wrap');
-    const summ  = document.getElementById('dias-summary');
 
     if (!fechas.length) {
-        empty.style.display = 'block'; wrap.style.display = 'none'; summ.style.display = 'none';
+        empty.style.display = 'block'; wrap.style.display = 'none';
+        // Reset cards to zero when no data
+        ['sc-ventas','sc-ingresos','sc-egresos','sc-ganancia'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = '$ 0';
+        });
+        document.getElementById('sc-ventas').textContent = '0';
         return;
     }
-    empty.style.display = 'none'; wrap.style.display = ''; summ.style.display = '';
+    empty.style.display = 'none'; wrap.style.display = '';
 
-    // Update summary band
-    const totEf  = Object.values(porFecha).reduce((s,g) => s + g.ef,    0);
-    const totTr  = Object.values(porFecha).reduce((s,g) => s + g.tr,    0);
-    const totAll = Object.values(porFecha).reduce((s,g) => s + g.total, 0);
-    const totVts = lista.length;
-    document.getElementById('sd-dias').textContent   = fechas.length;
-    document.getElementById('sd-ventas').textContent = totVts;
-    document.getElementById('sd-ef').textContent     = fmtMoney(totEf);
-    document.getElementById('sd-tr').textContent     = fmtMoney(totTr);
-    document.getElementById('sd-total').textContent  = fmtMoney(totAll);
+    // Totals
+    const totEf   = Object.values(porFecha).reduce((s,g) => s + g.ef,      0);
+    const totTr   = Object.values(porFecha).reduce((s,g) => s + g.tr,      0);
+    const totAll  = Object.values(porFecha).reduce((s,g) => s + g.total,   0);
+    const totEgr  = Object.values(porFecha).reduce((s,g) => s + g.egresos, 0);
+    const totNeto = totAll - totEgr;
+    const totVts  = lista.length;
+    const periodoLbl = activePeriod ? PERIOD_LABELS[activePeriod] : 'Período';
+
+    // Update stat cards
+    document.getElementById('sc-ventas').textContent      = totVts;
+    document.getElementById('sc-ventas-lbl').textContent  = 'Ventas · ' + periodoLbl;
+    document.getElementById('sc-ingresos').textContent    = fmtMoney(totAll);
+    document.getElementById('sc-ingresos-sub').textContent = totEf && totTr
+        ? `💵 ${fmtMoney(totEf)}  📱 ${fmtMoney(totTr)}`
+        : totEf ? `💵 ${fmtMoney(totEf)}` : totTr ? `📱 ${fmtMoney(totTr)}` : '';
+    document.getElementById('sc-egresos').textContent     = totEgr ? fmtMoney(totEgr) : '$ 0';
+    document.getElementById('sc-egresos-sub').textContent = totEgr
+        ? Object.values(porFecha).filter(g=>g.compras.length).length + ' día(s) con compras'
+        : 'Sin egresos';
+    document.getElementById('sc-ganancia').textContent    = fmtMoney(totNeto);
+    document.getElementById('sc-ganancia-sub').textContent = fmtMoney(totAll) + ' − ' + fmtMoney(totEgr);
+    const gCard = document.getElementById('sc-ganancia-card');
+    gCard.style.background = totNeto >= 0 ? '' : 'var(--red)';
+    document.getElementById('sc-ganancia-ico').textContent = totNeto >= 0 ? '💹' : '📉';
 
     const tbody = document.getElementById('dias-tbody');
     tbody.innerHTML = '';
 
     fechas.forEach(fecha => {
         const g      = porFecha[fecha];
+        const neto   = g.total - g.egresos;
         const esHoy  = fecha === HOY;
         const dayId  = 'day-' + fecha.replace(/-/g, '');
 
-        // Day summary row
+        const countLabel = g.ventas.length + ' venta' + (g.ventas.length !== 1 ? 's' : '')
+            + (g.compras.length ? ` · ${g.compras.length} compra${g.compras.length !== 1 ? 's' : ''}` : '');
+
         const tr = document.createElement('tr');
         tr.className = 'day-row';
         tr.style.background = esHoy ? '#FFFDE7' : '';
@@ -328,40 +394,55 @@ function renderDias() {
                 <span class="day-date">${fechaLarga(fecha)}</span>
                 ${esHoy ? '<span class="badge badge-amber" style="font-size:9px;padding:2px 7px;margin-left:6px">HOY</span>' : ''}
                 <span class="day-chevron" id="chev-${dayId}">▶</span>
-                <div class="day-count">${g.ventas.length} venta${g.ventas.length !== 1 ? 's' : ''}</div>
+                <div class="day-count">${countLabel}</div>
             </td>
             <td style="text-align:center;font-weight:700">${g.ventas.length}</td>
             <td style="text-align:right;color:var(--green);font-weight:600">${g.ef ? fmtMoney(g.ef) : '—'}</td>
             <td style="text-align:right;color:var(--blue);font-weight:600">${g.tr ? fmtMoney(g.tr) : '—'}</td>
-            <td style="text-align:right;font-weight:700;font-size:14px">${fmtMoney(g.total)}</td>
+            <td style="text-align:right;font-weight:700">${fmtMoney(g.total)}</td>
+            <td style="text-align:right;color:var(--red);font-weight:600">${g.egresos ? '− ' + fmtMoney(g.egresos) : '—'}</td>
+            <td style="text-align:right;font-weight:700;font-size:14px;color:${neto >= 0 ? 'var(--green)' : 'var(--red)'}">${fmtMoney(neto)}</td>
         `;
         tr.onclick = () => toggleDay(dayId);
         tbody.appendChild(tr);
 
-        // Detail rows (hidden by default)
+        // Detail rows
         const detailGroup = document.createElement('tbody');
-        detailGroup.id      = dayId;
+        detailGroup.id        = dayId;
         detailGroup.className = 'detail-rows';
 
         g.ventas.slice().reverse().forEach(v => {
-            const items   = (v.items || []).map(it => `${esc(it.nombre)} x${it.cantidad}`).join(', ');
-            const medio   = v.medio_pago || 'Efectivo';
-            const icoBadge = medio === 'Efectivo'
-                ? '<span class="badge badge-green" style="font-size:10px">💵 Efectivo</span>'
-                : '<span class="badge badge-blue" style="font-size:10px">📱 Transferencia</span>';
+            const items    = (v.items || []).map(it => `${esc(it.nombre)} x${it.cantidad}`).join(', ');
+            const icoBadge = medioBadge(v.medio_pago || 'Efectivo');
             const dtr = document.createElement('tr');
             dtr.innerHTML = `
                 <td style="padding-left:30px;color:var(--txt-g)">${v.hora || ''}</td>
                 <td>${icoBadge}</td>
-                <td style="color:var(--txt-d)">${items}</td>
+                <td style="color:var(--txt-d)" colspan="2">${items}</td>
+                <td style="text-align:right;font-weight:700;color:var(--green)">${fmtMoney(parseFloat(v.total)||0)}</td>
                 <td></td>
-                <td style="text-align:right;font-weight:700;color:var(--green)">${fmtMoney(v.total)}</td>
+                <td></td>
+            `;
+            detailGroup.appendChild(dtr);
+        });
+
+        g.compras.forEach(c => {
+            const items = (c.items || []).map(it => `${esc(it.producto)} x${it.cantidad}`).join(', ') || esc(c.notas || c.proveedor || '');
+            const dtr = document.createElement('tr');
+            dtr.style.background = '#FFF3F3';
+            dtr.innerHTML = `
+                <td style="padding-left:30px;color:var(--red);font-size:11px">🛒 Compra</td>
+                <td><span class="badge" style="background:#FFEBEE;color:var(--red);font-size:11px">📦 ${esc(c.proveedor||'—')}</span></td>
+                <td style="color:var(--txt-g);font-size:11px" colspan="2">${items}</td>
+                <td></td>
+                <td style="text-align:right;font-weight:700;color:var(--red)">− ${fmtMoney(parseFloat(c.total)||0)}</td>
+                <td></td>
             `;
             detailGroup.appendChild(dtr);
         });
 
         tbody.parentNode.insertBefore(detailGroup, tbody.nextSibling);
-        tbody.parentNode.appendChild(tbody); // keep tbody at end for next iteration — actually let's just append after
+        tbody.parentNode.appendChild(tbody);
     });
 }
 
@@ -381,7 +462,10 @@ function renderMovimientos() {
     const buscar = document.getElementById('m-buscar').value.toLowerCase().trim();
 
     let lista = filtrarBase(desde, hasta).filter(v => {
-        if (medio && (v.medio_pago || 'Efectivo') !== medio) return false;
+        if (medio) {
+            const mp = v.medio_pago || 'Efectivo';
+            if (mp !== medio && mp !== medio + ' (abono)') return false;
+        }
         if (buscar) {
             const ok = (v.items || []).some(it => (it.nombre || '').toLowerCase().includes(buscar));
             if (!ok) return false;
@@ -404,9 +488,11 @@ function renderMovimientos() {
     }
     empty.style.display = 'none'; wrap.style.display = ''; summ.style.display = '';
 
-    const totEf  = lista.filter(v => (v.medio_pago||'Efectivo') === 'Efectivo').reduce((s,v) => s+v.total, 0);
-    const totTr  = lista.filter(v => (v.medio_pago||'Efectivo') !== 'Efectivo').reduce((s,v) => s+v.total, 0);
-    const totAll = lista.reduce((s,v) => s + (v.total||0), 0);
+    const totEf  = lista.filter(v => ['Efectivo','Efectivo (abono)'].includes(v.medio_pago||'Efectivo'))
+                        .reduce((s,v) => s + (parseFloat(v.total)||0), 0);
+    const totTr  = lista.filter(v => ['Transferencia','Transferencia (abono)'].includes(v.medio_pago||''))
+                        .reduce((s,v) => s + (parseFloat(v.total)||0), 0);
+    const totAll = lista.reduce((s,v) => s + (parseFloat(v.total)||0), 0);
     document.getElementById('sm-cnt').textContent   = lista.length;
     document.getElementById('sm-ef').textContent    = fmtMoney(totEf);
     document.getElementById('sm-tr').textContent    = fmtMoney(totTr);
@@ -416,9 +502,7 @@ function renderMovimientos() {
     tbody.innerHTML = lista.map(v => {
         const resumen = (v.items || []).map(it => `${esc(it.nombre)} x${it.cantidad}`).join(', ');
         const medio   = v.medio_pago || 'Efectivo';
-        const badge   = medio === 'Efectivo'
-            ? '<span class="badge badge-green">💵 Efectivo</span>'
-            : '<span class="badge badge-blue">📱 Transferencia</span>';
+        const badge   = medioBadge(medio);
         const esHoy   = v.fecha === HOY;
         return `<tr>
             <td>
@@ -435,9 +519,7 @@ function renderMovimientos() {
 }
 
 // Initial render — default: this month
-document.getElementById('d-desde').value = isoMonthStart();
-document.getElementById('d-hasta').value = HOY;
-renderDias();
+quickRange('mes');
 renderMovimientos();
 </script>
 </body>

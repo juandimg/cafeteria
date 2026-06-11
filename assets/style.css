@@ -208,6 +208,7 @@ a { text-decoration: none; color: inherit; }
 }
 .badge-green  { background: var(--green);  }
 .badge-blue   { background: var(--blue);   }
+.badge-purple { background: var(--purple); }
 .badge-amber  { background: var(--amber);  }
 .badge-red    { background: var(--red);    }
 

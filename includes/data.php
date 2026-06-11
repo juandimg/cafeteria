@@ -133,6 +133,69 @@ function guardar_caja(float $base): void {
     $st->execute([date('Y-m-d'), $base]);
 }
 
+// ---- Clientes (fiado) ---------------------------------------
+
+function init_clientes_tables(): void {
+    static $done = false;
+    if ($done) return;
+    $d = db();
+    $d->exec("CREATE TABLE IF NOT EXISTS clientes (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        nombre VARCHAR(100) NOT NULL,
+        telefono VARCHAR(30) DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    $d->exec("CREATE TABLE IF NOT EXISTS cliente_movimientos (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        cliente_id INT NOT NULL,
+        tipo ENUM('deuda','abono') NOT NULL,
+        concepto VARCHAR(255) DEFAULT '',
+        monto DECIMAL(12,2) NOT NULL,
+        fecha DATE NOT NULL,
+        FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    $done = true;
+}
+
+function leer_clientes(): array {
+    init_clientes_tables();
+    return db()->query("
+        SELECT c.*,
+            COALESCE(SUM(CASE WHEN m.tipo='deuda' THEN m.monto ELSE 0 END),0)
+            - COALESCE(SUM(CASE WHEN m.tipo='abono' THEN m.monto ELSE 0 END),0) AS saldo
+        FROM clientes c
+        LEFT JOIN cliente_movimientos m ON m.cliente_id = c.id
+        GROUP BY c.id
+        ORDER BY saldo DESC, c.nombre
+    ")->fetchAll();
+}
+
+function agregar_cliente(array $c): int {
+    init_clientes_tables();
+    $st = db()->prepare('INSERT INTO clientes (nombre, telefono) VALUES (?, ?)');
+    $st->execute([$c['nombre'], $c['telefono']]);
+    return (int)db()->lastInsertId();
+}
+
+function eliminar_cliente(int $id): void {
+    db()->prepare('DELETE FROM clientes WHERE id=?')->execute([$id]);
+}
+
+function agregar_movimiento_cliente(int $cliente_id, string $tipo, string $concepto, float $monto, string $fecha): void {
+    $st = db()->prepare('INSERT INTO cliente_movimientos (cliente_id, tipo, concepto, monto, fecha) VALUES (?, ?, ?, ?, ?)');
+    $st->execute([$cliente_id, $tipo, $concepto, $monto, $fecha]);
+}
+
+function eliminar_movimiento_cliente(int $id): void {
+    db()->prepare('DELETE FROM cliente_movimientos WHERE id=?')->execute([$id]);
+}
+
+function leer_movimientos_cliente(int $cliente_id): array {
+    $st = db()->prepare('SELECT * FROM cliente_movimientos WHERE cliente_id=? ORDER BY fecha DESC, id DESC');
+    $st->execute([$cliente_id]);
+    return $st->fetchAll();
+}
+
 // ---- Usuarios -----------------------------------------------
 
 function leer_users(): array {

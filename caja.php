@@ -72,10 +72,12 @@ $total_caja = $base + $ingresos;
         </div>
         <?php else: ?>
         <?php foreach ($ventas_hoy_arr as $v):
-            $resumen = implode(', ', array_map(fn($it) => $it['nombre'].' x'.$it['cantidad'], $v['items']));
-            $medio   = $v['medio_pago'] ?? 'Efectivo';
-            $ico_m   = $medio === 'Efectivo' ? '💵' : '📱';
-            $cls_m   = $medio === 'Efectivo' ? 'badge-green' : 'badge-blue';
+            $resumen    = implode(', ', array_map(fn($it) => $it['nombre'].' x'.$it['cantidad'], $v['items']));
+            $medio      = $v['medio_pago'] ?? 'Efectivo';
+            $es_abono   = str_contains($medio, '(abono)');
+            $medio_base = $es_abono ? str_replace(' (abono)', '', $medio) : $medio;
+            $ico_m   = match($medio_base) { 'Efectivo' => '💵', 'Transferencia' => '📱', 'Crédito' => '📋', default => '💳' };
+            $cls_m   = match($medio_base) { 'Efectivo' => 'badge-green', 'Transferencia' => 'badge-blue', default => 'badge-purple' };
         ?>
         <div class="row-item">
             <div style="min-width:80px">
@@ -83,10 +85,16 @@ $total_caja = $base + $ingresos;
             </div>
             <div class="ri-main">
                 <div class="ri-name" style="font-weight:400"><?= htmlspecialchars($resumen) ?></div>
+                <?php if ($es_abono): ?>
+                <div style="font-size:11px;color:var(--amber);font-weight:700;margin-top:2px">⚡ Abono parcial</div>
+                <?php endif; ?>
             </div>
-            <span class="badge <?= $cls_m ?>"><?= $ico_m ?> <?= htmlspecialchars($medio) ?></span>
+            <span class="badge <?= $cls_m ?>"><?= $ico_m ?> <?= htmlspecialchars($medio_base) ?></span>
             <div style="font-size:13px;font-weight:700;color:var(--green);min-width:100px;text-align:right">
                 <?= fmt_money($v['total']) ?>
+                <?php if ($es_abono): ?>
+                <div style="font-size:11px;font-weight:400;color:var(--amber)">abonado</div>
+                <?php endif; ?>
             </div>
         </div>
         <?php endforeach; ?>

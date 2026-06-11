@@ -145,11 +145,7 @@ $ok = $_GET['ok'] ?? '';
                 </div>
                 <div style="display:flex;gap:8px">
                     <a href="<?= BASE_URL ?>/proveedores.php?edit=<?= $p['id'] ?>" class="btn btn-edit btn-sm">✏️ Editar</a>
-                    <form method="POST" onsubmit="return confirm('¿Eliminar este proveedor?')">
-                        <input type="hidden" name="accion" value="eliminar">
-                        <input type="hidden" name="idx" value="<?= $p['id'] ?>">
-                        <button class="btn btn-del btn-sm" type="submit">🗑 Eliminar</button>
-                    </form>
+                    <button class="btn btn-del btn-sm" onclick="eliminarProveedor(<?= $p['id'] ?>, '<?= htmlspecialchars(addslashes($p['nombre'])) ?>')">🗑 Eliminar</button>
                 </div>
             </div>
             <?php endforeach; ?>
@@ -163,6 +159,24 @@ const d=new Date();
 const dias=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
 const meses=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 document.getElementById('fecha-hoy').textContent=`${dias[d.getDay()]} ${d.getDate()} de ${meses[d.getMonth()]} de ${d.getFullYear()}`;
+
+async function eliminarProveedor(id, nombre) {
+    if (!confirm(`¿Eliminar al proveedor "${nombre}"?\nEsta acción no se puede deshacer.`)) return;
+    const fd = new FormData();
+    fd.append('action', 'eliminar_proveedor');
+    fd.append('id', id);
+    try {
+        const res  = await fetch(BASE_URL + '/api.php', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (data.ok) {
+            location.reload();
+        } else {
+            alert('Error al eliminar: ' + (data.msg || 'desconocido'));
+        }
+    } catch {
+        alert('Error de conexión al intentar eliminar.');
+    }
+}
 </script>
 </body>
 </html>

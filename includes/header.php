@@ -10,6 +10,7 @@ $nav_items = [
     ['inventario', '📦', 'Inventario'],
     ['compras',    '🛍️', 'Compras'],
     ['caja',       '💰', 'Caja'],
+    ['clientes',   '👥', 'Clientes'],
     ['reportes',   '📊', 'Reportes'],
 ];
 ?>

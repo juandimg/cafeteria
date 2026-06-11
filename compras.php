@@ -129,13 +129,16 @@ sort($prov_nombres);
             </div>
             <div class="form-group" style="margin:0">
                 <label class="form-label">PROVEEDOR</label>
-                <input type="text" id="m-proveedor" class="form-control"
-                       list="lista-proveedores" placeholder="Nombre del proveedor">
-                <datalist id="lista-proveedores">
-                    <?php foreach ($prov_nombres as $pn): ?>
-                    <option value="<?= htmlspecialchars($pn) ?>">
+                <select id="m-proveedor-sel" class="form-control" onchange="onProveedorChange()">
+                    <option value="">— Seleccionar proveedor —</option>
+                    <?php foreach ($proveedores as $pv): ?>
+                    <option value="<?= htmlspecialchars($pv['nombre']) ?>"><?= htmlspecialchars($pv['nombre']) ?></option>
                     <?php endforeach; ?>
-                </datalist>
+                    <option value="__nuevo__">＋ Agregar nuevo proveedor…</option>
+                </select>
+                <input type="text" id="m-proveedor-nuevo" class="form-control"
+                       placeholder="Nombre del nuevo proveedor"
+                       style="display:none;margin-top:6px">
             </div>
         </div>
 
@@ -166,7 +169,7 @@ sort($prov_nombres);
         </div>
 
         <div style="display:flex;gap:10px;margin-top:4px">
-            <button class="btn btn-amber btn-lg" style="flex:1" onclick="guardarCompra()">💾 Guardar Compra</button>
+            <button id="btn-guardar-compra" class="btn btn-amber btn-lg" style="flex:1" onclick="guardarCompra()">💾 Guardar Compra</button>
             <button class="btn btn-ghost btn-lg" onclick="cerrarModal()">Cancelar</button>
         </div>
     </div>
@@ -274,7 +277,28 @@ function limpiarFiltros() {
 
 // ── Modal ──
 
+function onProveedorChange() {
+    const sel   = document.getElementById('m-proveedor-sel');
+    const nuevo = document.getElementById('m-proveedor-nuevo');
+    if (sel.value === '__nuevo__') {
+        nuevo.style.display = '';
+        nuevo.focus();
+    } else {
+        nuevo.style.display = 'none';
+        nuevo.value = '';
+    }
+}
+
+function getProveedorValue() {
+    const sel = document.getElementById('m-proveedor-sel');
+    if (sel.value === '__nuevo__') return document.getElementById('m-proveedor-nuevo').value.trim();
+    return sel.value;
+}
+
 function abrirModal() {
+    document.getElementById('m-proveedor-sel').value   = '';
+    document.getElementById('m-proveedor-nuevo').value = '';
+    document.getElementById('m-proveedor-nuevo').style.display = 'none';
     document.getElementById('modal-overlay').classList.add('open');
     const tbody = document.getElementById('items-body');
     if (!tbody.children.length) agregarFila();
@@ -324,17 +348,19 @@ function calcularTotal() {
 }
 
 async function guardarCompra() {
+    const btn = document.getElementById('btn-guardar-compra');
     const fecha     = document.getElementById('m-fecha').value.trim();
-    const proveedor = document.getElementById('m-proveedor').value.trim();
+    const proveedor = getProveedorValue();
+    const esNuevo   = document.getElementById('m-proveedor-sel').value === '__nuevo__';
     const notas     = document.getElementById('m-notas').value.trim();
 
     const items = [];
     let total = 0;
     document.querySelectorAll('#items-body tr').forEach(row => {
-        const producto      = row.querySelector('.item-prod')?.value.trim();
-        const cantidad      = parseFloat(row.querySelector('.item-cant')?.value) || 0;
+        const producto       = row.querySelector('.item-prod')?.value.trim();
+        const cantidad       = parseFloat(row.querySelector('.item-cant')?.value) || 0;
         const costo_unitario = parseFloat(row.querySelector('.item-costo')?.value) || 0;
-        const subtotal      = cantidad * costo_unitario;
+        const subtotal       = cantidad * costo_unitario;
         if (producto && cantidad > 0 && costo_unitario > 0) {
             items.push({ producto, cantidad, costo_unitario, subtotal });
             total += subtotal;
@@ -342,8 +368,16 @@ async function guardarCompra() {
     });
 
     if (!fecha)     { alert('Selecciona una fecha.'); return; }
-    if (!proveedor) { alert('Ingresa el nombre del proveedor.'); return; }
+    if (!proveedor) { alert('Selecciona o ingresá el nombre del proveedor.'); return; }
     if (!items.length) { alert('Agrega al menos un producto con cantidad y costo.'); return; }
+
+    // Guardar nuevo proveedor en la tabla de proveedores
+    if (esNuevo && proveedor) {
+        const fdp = new FormData();
+        fdp.append('action', 'agregar_proveedor_rapido');
+        fdp.append('nombre', proveedor);
+        await fetch(BASE_URL + '/api.php', { method: 'POST', body: fdp });
+    }
 
     const fd = new FormData();
     fd.append('action',     'guardar_compra');
@@ -353,7 +387,6 @@ async function guardarCompra() {
     fd.append('total',      total);
     fd.append('notas',      notas);
 
-    const btn = event.currentTarget;
     btn.disabled = true;
     btn.textContent = 'Guardando…';
 
